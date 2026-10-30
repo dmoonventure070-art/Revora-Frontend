@@ -27,6 +27,24 @@ const SLICE_COLOURS = [
   "var(--chart-cat-8, #f472b6)", // pink
 ];
 
+function normaliseSlices(slices: AllocationSlice[]): AllocationSlice[] {
+  const totalPct = slices.reduce((sum, s) => sum + Math.max(0, s.percentage), 0);
+  const totalValue = slices.reduce((sum, s) => sum + Math.max(0, s.value), 0);
+
+  return slices.map((s) => {
+    const rawPct = Math.max(0, s.percentage);
+    const percentage =
+      totalPct === 100
+        ? rawPct
+        : totalPct > 0
+          ? (rawPct / totalPct) * 100
+          : totalValue > 0
+            ? (Math.max(0, s.value) / totalValue) * 100
+            : 0;
+    return { ...s, percentage };
+  });
+}
+
 function DonutChart({ slices }: { slices: AllocationSlice[] }) {
   const size = 160;
   const r = 60;
@@ -35,17 +53,20 @@ function DonutChart({ slices }: { slices: AllocationSlice[] }) {
   const circumference = 2 * Math.PI * r;
   const gap = 2; // degrees gap between slices
 
-  // Build strokes from percentages
-  let cumulativePct = 0;
-  const segments = slices.map((s, i) => {
+  const normalisedSlices = normaliseSlices(slices);
+
+  // Build strokes from normalised percentages
+  let cumulativeLen = 0;
+  const segments = normalisedSlices.map((s, i) => {
     const pct = s.percentage;
-    const dashLen = (pct / 100) * circumference - (gap / 360) * circumference;
-    const offset = circumference - (cumulativePct / 100) * circumference;
-    cumulativePct += pct;
+    const sliceLen = (pct / 100) * circumference;
+    const dashLen = Math.max(0, sliceLen - (gap / 360) * circumference);
+    const offset = cumulativeLen === 0 ? 0 : -cumulativeLen;
+    cumulativeLen += sliceLen;
     return { ...s, dashLen, offset, colour: SLICE_COLOURS[i % SLICE_COLOURS.length] };
   });
 
-  const totalFormatted = slices.reduce((sum, s) => sum + s.value, 0).toLocaleString("en-US", {
+  const totalFormatted = normalisedSlices.reduce((sum, s) => sum + s.value, 0).toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
@@ -72,7 +93,7 @@ function DonutChart({ slices }: { slices: AllocationSlice[] }) {
               fill="none"
               stroke={seg.colour}
               strokeWidth={22}
-              strokeDasharray={`${seg.dashLen} ${circumference}`}
+              strokeDasharray={`${seg.dashLen} ${circumference - seg.dashLen}`}
               strokeDashoffset={seg.offset}
               transform={`rotate(-90 ${cx} ${cy})`}
               aria-label={`${seg.label}: ${seg.percentage.toFixed(1)}%`}
@@ -166,6 +187,8 @@ export const AllocationWidget: React.FC<AllocationWidgetProps> = ({
     );
   }
 
+  const normalisedSlices = normaliseSlices(slices);
+
   return (
     <section
       className="glass-card p-6 space-y-4"
@@ -200,11 +223,11 @@ export const AllocationWidget: React.FC<AllocationWidgetProps> = ({
 
       {effectiveView === "donut" ? (
         <div className="donut-view">
-          <DonutChart slices={slices} />
+          <DonutChart slices={normalisedSlices} />
         </div>
       ) : (
         <div className="bar-view">
-          <BarView slices={slices} />
+          <BarView slices={normalisedSlices} />
         </div>
       )}
     </section>
